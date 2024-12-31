@@ -1,5 +1,5 @@
 blueprint:
-  name: Frigate Notifications (0.12.0.4p)
+  name: Frigate Notifications (0.12.0.5c-ai)
   author: SgtBatten
   homeassistant:
     min_version: 2024.6.0
@@ -24,7 +24,7 @@ blueprint:
 
     ### Features:
       - Easily select the camera entities or mobile device using a drop-down menu.
-      - COnfigure multipl cameras in one automation. 
+      - Configure multiple cameras in one automation. 
       - Send notifications to an Android or iOS mobile device or a TV.
         - or a group containing any combination of the above.
         - for TV Alerts, you need to install and configure https://www.home-assistant.io/integrations/nfandroidtv/
@@ -61,13 +61,11 @@ blueprint:
       - Video for iOS sent 5 seconds after the event ends.
       - Set custom entity for iOS live view.
       - Set Icons for Action Buttons on iOS.
-      - Strip trailing underscores and numbers from the camera name. (This will break automation for anyone whose Frigate cam ends in _x.)
       - Android Auto option.
       - Custom Filter.
       - Customise group on mobile devices.
       - Bounding box and crop options for attachment.
       - Set notification volume on iOS
-      - Integrates with Double Take to replace object labels with names if a face is matched.
 
     [1]: https://companion.home-assistant.io/docs/notifications/notifications-basic#sending-notifications-to-multiple-devices
     [2]: https://blakeblackshear.github.io/frigate/configuration/cameras#zones
@@ -77,19 +75,19 @@ blueprint:
     Go to https://github.com/SgtBatten/HA_blueprints to report bugs, request new features, or get support with your configuration.
 
   domain: automation
-  source_url: https://github.com/SgtBatten/HA_blueprints/blob/main/Frigate_Camera_Notifications/Beta.yaml
+  source_url: https://github.com/debodt/HA_blueprints/edit/main/Frigate_Camera_Notifications/Beta.yaml
   input:
     camera:
       name: Frigate Cameras
       description: |
         Select the cameras that will trigger notifications. 
         If you do not see cameras listed in the drop-down, check you have the Frigate integration installed.
-        To more effectively customise the notifications per camera you may need to create one automation per camera.
+        To more effectively customise the notifications you may need to create one automation per camera.
       selector:
         entity:
-          integration: frigate
-          domain: camera
-          device_class: camera
+          filter:
+            integration: frigate
+            domain: camera
           multiple: true
     notify_device:
       name: Mobile Device
@@ -97,7 +95,8 @@ blueprint:
       default: false
       selector:
         device:
-          integration: mobile_app
+          filter:
+            integration: mobile_app
     notify_group:
       name: Notification Group or Android/Fire TV (Optional)
       description: |
@@ -106,11 +105,29 @@ blueprint:
 
         Note: If the group contains both mobile devices and TVs, the TV will not display the snapshot unless "TV notifications" is set to true. However, this will stop Android phones from receiving thumbnails.
       default: ""
+    notify_telegram_chat_id:
+      name: Telegram Chat ID (Optional)
+      description: |
+        The chat ID to send telegram notifications to.
+        If set, this will override individual devices and groups above. Note: TV (far below) must be set to false.
+        Base URL must start with https since telegram URL buttons only work with https.
+      default: ""
     base_url:
       name: Base URL (Optional)
       description: |
-        The external URL for your Home Assistant instance. 
+        The external URL for your Home Assistant instance.
         Recommended for iOS and required for Android/Fire TV.
+        Must include the scheme i.e http:// or https://
+        Examples: http://192.168.1.25:8123   https://homeassistant.mydomain.com
+      default: ""
+    telegram_base_url:
+      name: Telegram Base URL (Optional)
+      description: |
+        The internal URL for your Home Assistant instance.
+        Used only for telegram integration (For downloading media). Useful when your base URL points to a proxy instance
+        which could be unreachable from your home assistant instance. If unset telegram will use Base URL.
+        Must include the scheme i.e http:// or https://
+        Examples: http://192.168.1.25:8123
       default: ""
     mqtt_topic:
       name: MQTT Topic (Advanced)
@@ -129,10 +146,11 @@ blueprint:
       input:
         title:
           name: Notification Title (Optional)
-          description: |
-            # Notification Customisations
-
-            The title of the notification.
+          description: The title of the notification.
+          default: ""
+        aiprompt:
+          name: AI prompt
+          description: The prompt to send to google.
           default: ""
         message:
           name: Notification Message
@@ -155,6 +173,8 @@ blueprint:
                   value: "A {{ label }} {{ 'is loitering' if loitering else 'was detected' }} on the {{ camera_name }} camera{% if entered_zones %} in the {{ entered_zones | join(', ') | replace('_',' ') }}{% endif %}."
                 - label: "Long with a timestamp HH:MM"
                   value: "A {{ label }} {{ 'is loitering' if loitering else 'was detected' }} on the {{ camera_name }} camera{% if entered_zones %} in the {{ entered_zones | join(', ') | replace('_',' ') }}{% endif %} at {{event['after']['start_time']|timestamp_custom('%H:%M')}}."
+                - label: AI Generated
+                  value: "{{generated_content['text']}}"
               custom_value: true
         update_sub_label:
           name: Update Sub Label (Advanced)
@@ -198,7 +218,8 @@ blueprint:
           default: ""
           selector:
             entity:
-              integration: input_text
+              filter:
+                integration: input_text
         alert_once:
           name: Alert Once (Optional)
           description: Only the first notification for each event will play a sound. Updates, including new thumbnails, will be silent. iOS users who use Critical Notifications above will still hear default critical sounds for updates.
@@ -340,7 +361,8 @@ blueprint:
           default: ""
           selector:
             entity:
-              domain: camera
+              filter:
+                domain: camera
         android_auto:
           name: Android Auto
           description: Show the notification on Android Auto if the receiving device is connected.
@@ -425,14 +447,16 @@ blueprint:
               custom_value: true
         presence_filter:
           name: Presence Filter (Optional)
-          description: Only notify if the selected presence entity is not "home".
+          description: Only notify if ALL of the selected presence entities are not "home". 
           default: ""
           selector:
             entity:
-              domain:
-                - device_tracker
-                - person
-                - group
+              filter:
+                domain:
+                  - device_tracker
+                  - person
+                  - group
+              multiple: true
         state_filter:
           name: State Filter on/off (Optional)
           description: Enable the two State Filter settings below. Only notify if the selected entity is in the specified states.
@@ -573,9 +597,7 @@ blueprint:
       input:
         tap_action:
           name: Tap Action URL
-          description: |
-            # Action Buttons and URLs
-
+          description:
             The URL to open when tapping on the notification. Some presets are provided, you can also set your own by typing in the box. 
 
             These options define the text and URLs associated with the three action buttons at the bottom of the notification.
@@ -825,13 +847,13 @@ blueprint:
 mode: parallel
 trigger_variables:
   mqtt_topic: !input mqtt_topic
-trigger:
-  - platform: event
+triggers:
+  - trigger: event
     event_type: mobile_app_notification_action
     event_data:
       action: "silence-{{ this.entity_id }}"
     id: silence
-  - platform: mqtt
+  - trigger: mqtt
     topic: "{{mqtt_topic}}"
     payload: "new"
     value_template: "{{ value_json['type']}}"
@@ -844,6 +866,8 @@ variables:
   camera_name: "{{ camera | replace('_', ' ') | title }}"
   input_base_url: !input base_url
   base_url: "{{ input_base_url.rstrip('/')}}"
+  input_telegram_base_url: !input telegram_base_url
+  telegram_base_url: "{{ input_telegram_base_url.rstrip('/') if input_telegram_base_url else base_url }}"
   update_sub_label: !input update_sub_label
   input_client_id: !input client_id
   client_id: "{{input_client_id if not input_client_id else '/' + input_client_id if '/' not in input_client_id else input_client_id }}"
@@ -854,6 +878,8 @@ variables:
   android_auto: !input android_auto
   notify_group: !input notify_group
   notify_group_target: "{{ notify_group | lower | regex_replace('^notify\\.', '') | replace(' ','_') }}"
+  telegram_chat_id: !input notify_telegram_chat_id
+  telegram: "{{true if (telegram_chat_id | length > 0) else ''}}"
   zone_only: !input zone_filter
   input_zones: !input zones
   zones: "{{ input_zones }}"
@@ -886,24 +912,65 @@ variables:
   debug: !input debug
   redacted: !input redacted
   master_condition: !input master_condition
-action:
+  ai_prompt: !input aiprompt
+actions:
 - if:
   - condition: !input master_condition
   then:
+  - sequence:
+      - service: camera.snapshot
+        data:
+          filename: /media/snap/{{camera}}-1.jpg
+        target:
+          entity_id: camera.{{camera}}
+        enabled: true
+      - delay:
+          hours: 0
+          minutes: 0
+          seconds: 1
+          milliseconds: 0
+        enabled: true
+      - service: camera.snapshot
+        data:
+          filename: /media/snap/{{camera}}-2.jpg
+        target:
+          entity_id: camera.{{camera}}
+        enabled: true
+      - delay:
+          hours: 0
+          minutes: 0
+          seconds: 1
+          milliseconds: 0
+        enabled: true
+      - service: camera.snapshot
+        data:
+          filename: /media/snap/{{camera}}-3.jpg
+        target:
+          entity_id: camera.{{camera}}
+        enabled: true
+      - service: google_generative_ai_conversation.generate_content
+        metadata: {}
+        data:
+          prompt: "{{ai_prompt}}"
+          image_filename:
+            - /config/www/tmp/snapshot-{{camera}}1.jpg
+            - /config/www/tmp/snapshot-{{camera}}2.jpg
+            - /config/www/tmp/snapshot-{{camera}}3.jpg
+        response_variable: generated_content
   - choose:
       - alias: "Silence New Object Notifications"
         conditions:
           - condition: trigger
             id: silence
         sequence:
-          - service: automation.turn_off
+          - action: automation.turn_off
             target:
               entity_id: "{{ this.entity_id }}"
             data:
               stop_actions: false
           - delay:
               minutes: !input silence_timer
-          - service: automation.turn_on
+          - action: automation.turn_on
             target:
               entity_id: "{{ this.entity_id }}"
       - alias: "Custom Action Manual"
@@ -927,7 +994,7 @@ action:
               object: "{{ trigger.payload_json['after']['label'] }}"
               label: "{{ object | title }}"
               # Dynamic Variables per event
-              initial_home: "{{ presence_entity != '' and is_state(presence_entity, 'home') }}"
+              initial_home: "{{presence_entity |reject('in', '') |select('is_state', 'home') |list |length != 0 }}"
               entered_zones: "{{ trigger.payload_json['after']['entered_zones'] | default([]) }}"
 
               # Zones Variables
@@ -984,7 +1051,7 @@ action:
               - conditions:
                   - "{{debug}}"
                 sequence:
-                  - service: logbook.log
+                  - action: logbook.log
                     data_template:
                       name: Frigate Notification
                       message: |
@@ -1028,6 +1095,8 @@ action:
                             tv_duration: {{tv_duration}}, 
                             tv_transparency: {{tv_transparency}}, 
                             tv_interrupt: {{tv_interrupt}}, 
+                            telegram: {{telegram}},
+                            telegram_chat_id: {{telegram_chat_id}},
                           Filters: 
                             Zones: 
                               Zone Filter toggle on: {{zone_only}}, 
@@ -1076,6 +1145,13 @@ action:
                   - "{{ custom_filter }}"
                 sequence:
                   - choose:
+                      - conditions: "{{ telegram }}"
+                        sequence:
+                          - action: telegram_bot.send_photo
+                            data:
+                              target: "{{telegram_chat_id}}"
+                              caption: "{{message}}"
+                              url: "{{telegram_base_url}}/api/frigate{{client_id}}/notifications/{{id}}/{{attachment}}"
                       - conditions: "{{ not notify_group_target }}"
                         sequence:
                           - device_id: !input notify_device
@@ -1127,7 +1203,7 @@ action:
                                   destructive: true
                       - conditions: "{{ tv }}"
                         sequence:
-                          - service: "notify.{{ notify_group_target }}"
+                          - action: "notify.{{ notify_group_target }}"
                             data:
                               title: "{{title}}"
                               message: "{{message}}"
@@ -1181,7 +1257,7 @@ action:
                                     icon: "{{icon_3}}"
                                     destructive: true
                     default:
-                      - service: "notify.{{ notify_group_target }}"
+                      - action: "notify.{{ notify_group_target }}"
                         data:
                           title: "{{title}}"
                           message: "{{message}}"
@@ -1250,7 +1326,7 @@ action:
                                     alert_once: "{{ alert_once }}"
                                     tts_text: "{{message}}"
                           default:
-                            - service: "notify.{{ notify_group_target }}"
+                            - action: "notify.{{ notify_group_target }}"
                               data:
                                 message: "{{'TTS'}}"
                                 data:
@@ -1258,7 +1334,7 @@ action:
                                   channel: "{{'alarm_stream' if critical else channel}}"
                                   alert_once: "{{ alert_once }}"
                                   tts_text: "{{message}}"
-                        - service: input_text.set_value
+                        - action: input_text.set_value
                           data:
                             value: |
                               {% set newIds = id + '|' + states(tts_helper) %}
@@ -1268,7 +1344,7 @@ action:
           - repeat:
               sequence:
                 - wait_for_trigger:
-                    - platform: mqtt
+                    - trigger: mqtt
                       topic: "{{mqtt_topic}}"
                       payload: "{{ id }}"
                       value_template: "{{ value_json['after']['id'] }}"
@@ -1279,8 +1355,8 @@ action:
                     event: "{{ wait.trigger.payload_json }}"
                     loitering: "{{ loiter_timer and event['before']['motionless_count']/fps/60 < loiter_timer and event['after']['motionless_count']/fps/60 >= loiter_timer }}"
                     new_snapshot: "{{ update_thumbnail and event['before']['snapshot']['frame_time'] != event['after']['snapshot']['frame_time'] }}"
-                    home: "{{ presence_entity != '' and is_state(presence_entity, 'home') }}"
-                    presence_changed: "{{ presence_entity != '' and as_datetime(event['before']['frame_time']) < states[presence_entity].last_changed }}"
+                    home: "{{presence_entity |reject('in', '') |select('is_state', 'home') |list |length != 0 }}"
+                    presence_changed: "{{ presence_entity |reject('in', '') |expand |map(attribute='last_changed') |list |select('gt', as_datetime(event['before']['frame_time'])) |list |length != 0}}"
                     last_zones: "{{ event['before']['entered_zones'] | lower}}"
                     entered_zones: "{{ event['after']['entered_zones'] | lower | default([]) }}"
 
@@ -1361,7 +1437,7 @@ action:
                     - conditions:
                         - "{{debug}}"
                       sequence:
-                        - service: logbook.log
+                        - action: logbook.log
                           data_template:
                             name: Frigate Notification
                             message: |
@@ -1423,6 +1499,30 @@ action:
                     - conditions: "{{ loitering or (custom_filter and not home and zones_satisfied and state_true and (new_snapshot or presence_changed or stationary_moved or entered_new_zones or entered_new_filter_zones or sub_label_changed)) }}"
                       sequence:
                         - choose:
+                            - conditions: "{{ telegram }}"
+                              sequence:
+                                - choose:
+                                  - conditions:
+                                    - "{{ event['type'] == 'end' }}"
+                                    - "{{ video | length > 0 }}"
+                                    sequence:
+                                      - action: telegram_bot.send_video
+                                        data:
+                                          target: "{{telegram_chat_id}}"
+                                          caption: "{{message}}"
+                                          url: "{{ video | replace(base_url, telegram_base_url) }}"
+                                          inline_keyboard:
+                                            - [["{{button_1}}", "{{url_1}}"], ["{{button_2}}", "{{url_2}}"]]
+                                            - [["{{button_3}}", "{{url_3}}"]]
+                                  default:
+                                    - action: telegram_bot.send_photo
+                                      data:
+                                        target: "{{telegram_chat_id}}"
+                                        caption: "{{message}}"
+                                        url: "{{telegram_base_url}}/api/frigate{{client_id}}/notifications/{{id}}/{{attachment}}"
+                                        inline_keyboard:
+                                          - [["{{button_1}}", "{{url_1}}"], ["{{button_2}}", "{{url_2}}"]]
+                                          - [["{{button_3}}", "{{url_3}}"]]
                             - conditions: "{{ not notify_group_target }}"
                               sequence:
                                 - device_id: !input notify_device
@@ -1475,7 +1575,7 @@ action:
                                         destructive: true
                             - conditions: "{{ tv }}"
                               sequence:
-                                - service: "notify.{{ notify_group_target }}"
+                                - action: "notify.{{ notify_group_target }}"
                                   data:
                                     title: "{{title}}"
                                     message: "{{message}}"
@@ -1531,7 +1631,7 @@ action:
                                           icon: "{{icon_3}}"
                                           destructive: true
                           default:
-                            - service: "notify.{{ notify_group_target }}"
+                            - action: "notify.{{ notify_group_target }}"
                               data:
                                 title: "{{title}}"
                                 message: "{{message}}"
@@ -1602,7 +1702,7 @@ action:
                                           tts_text: "{{message}}"
 
                                 default:
-                                  - service: "notify.{{ notify_group_target }}"
+                                  - action: "notify.{{ notify_group_target }}"
                                     data:
                                       message: "{{'TTS'}}"
                                       data:
@@ -1610,7 +1710,7 @@ action:
                                         channel: "{{'alarm_stream' if critical else channel}}"
                                         alert_once: "{{ alert_once }}"
                                         tts_text: "{{message}}"
-                              - service: input_text.set_value
+                              - action: input_text.set_value
                                 data:
                                   value: |
                                     {% set newIds = id + '|' + states(tts_helper) %}
