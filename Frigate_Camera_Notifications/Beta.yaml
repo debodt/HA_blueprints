@@ -920,7 +920,7 @@ actions:
   - sequence:
       - service: camera.snapshot
         data:
-          filename: /media/snap/{{camera}}-1.jpg
+          filename: /media/snap/{{camera}}/1.jpg
         target:
           entity_id: camera.{{camera}}
         enabled: true
@@ -932,7 +932,7 @@ actions:
         enabled: true
       - service: camera.snapshot
         data:
-          filename: /media/snap/{{camera}}-2.jpg
+          filename: /media/snap/{{camera}}/2.jpg
         target:
           entity_id: camera.{{camera}}
         enabled: true
@@ -944,7 +944,7 @@ actions:
         enabled: true
       - service: camera.snapshot
         data:
-          filename: /media/snap/{{camera}}-3.jpg
+          filename: /media/snap/{{camera}}/3.jpg
         target:
           entity_id: camera.{{camera}}
         enabled: true
@@ -953,9 +953,9 @@ actions:
         data:
           prompt: "{{ai_prompt}}"
           image_filename:
-            - /config/www/tmp/snapshot-{{camera}}1.jpg
-            - /config/www/tmp/snapshot-{{camera}}2.jpg
-            - /config/www/tmp/snapshot-{{camera}}3.jpg
+            - /media/snap/{{camera}}/1.jpg
+            - /media/snap/{{camera}}/2.jpg
+            - /media/snap/{{camera}}/3.jpg
         response_variable: generated_content
   - choose:
       - alias: "Silence New Object Notifications"
