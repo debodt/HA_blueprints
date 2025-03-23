@@ -1813,7 +1813,7 @@ actions:
                           choose:
                             - conditions:
                                 - "{{ custom_action_auto_multi | length > 0 }}"
-                              sequence: !input "custom_action_auto_multi"
+                              sequence: !input custom_action_auto_multi
                         - alias: "Delay for Final Update"
                           choose:
                             - conditions:
