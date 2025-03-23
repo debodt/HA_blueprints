@@ -143,6 +143,14 @@ blueprint:
           default: true
           selector:
             boolean:
+        show_ai_description:
+          name: Show AI Descriptions
+          description: |
+            When enabled, AI-generated descriptions from Frigate will be added to notifications when available.
+            Requires Frigate's GenAI capabilities to be configured.
+          default: true
+          selector:
+            boolean:
         subtitle:
           name: Subtitle
           description: A secondary heading you can use in your notifications.
@@ -988,6 +996,7 @@ variables:
   input_telegram_base_url: !input telegram_base_url
   telegram_base_url: "{{ input_telegram_base_url.rstrip('/') if input_telegram_base_url else base_url }}"
   update_sub_label: !input update_sub_label
+  show_ai_description: !input show_ai_description
   input_client_id: !input client_id
   client_id: "{{input_client_id if not input_client_id else '/' + input_client_id if '/' not in input_client_id else input_client_id }}"
   alert_once: !input alert_once
@@ -1674,7 +1683,10 @@ actions:
                       {% endif %}
                     # import the title and message again so any sublabel, object or zone changes are captured.
                     title: !input title
-                    message: "{{ !input message }}{% if object_description %}\n\nDescription: {{ object_description }}{% endif %}"
+                    message: >-
+                      {{ !input message }}{% if show_ai_description and object_description %}
+                      
+                      Description: {{ object_description }}{% endif %}
                     subtitle: !input subtitle
 
                     critical_input: !input critical
