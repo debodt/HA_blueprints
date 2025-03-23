@@ -167,7 +167,7 @@ blueprint:
                 - "false"
                 - "true"
                 - "{{'false' if now().hour in [8,9,10,11,12,13,14,15,16,17,18] else 'true'}}"
-                - "{{'true' if is_state('sun.sun', 'above_horizon') else 'false' }}"`
+                - "{{'true' if is_state('sun.sun', 'above_horizon') else 'false' }}"
                 - "{{ event['after']['top_score'] |float(0) > 0.8 }}"
               custom_value: true
         interruption_level:
@@ -1209,8 +1209,7 @@ actions:
                           Description: {{ description }}
           - choose:
               - conditions:
-                  - condition: template
-                    value_template: "{{ update_id in this.attributes.frigate_ids | default([]) }}"
+                  - "{{ update_id in this.attributes.frigate_ids | default([]) }}"
                 sequence:
                   - action: "notify.{{ notify_group_target if notify_group_target else 'mobile_app_' + device_attr(notify_device, 'name') | lower | replace(' ', '_') }}"
                     data:
