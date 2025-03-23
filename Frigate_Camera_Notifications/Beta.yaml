@@ -167,7 +167,7 @@ blueprint:
                 - "false"
                 - "true"
                 - "{{'false' if now().hour in [8,9,10,11,12,13,14,15,16,17,18] else 'true'}}"
-                - "{{'true' if is_state('sun.sun', 'above_horizon') else 'false' }}"
+                - "{{'true' if is_state('sun.sun', 'above_horizon') else 'false' }}"`
                 - "{{ event['after']['top_score'] |float(0) > 0.8 }}"
               custom_value: true
         interruption_level:
@@ -730,7 +730,7 @@ blueprint:
             select:
               options:
                 - label: Silence New Notifications
-                  value: silence-{{ this.entity_id }}
+                  value: silence-{{ this.entity_id | default('unknown') }}
                 - label: View Clip
                   value: "{{base_url}}/api/frigate{{client_id}}/notifications/{{id}}/{{camera}}/clip.mp4"
                 - label: View Clip (IOS)
@@ -754,7 +754,7 @@ blueprint:
                 - label: Open Reolink App (Android)
                   value: app://com.mcu.reolink
                 - label: Custom Action (Manual Trigger)
-                  value: custom-{{ this.entity_id }}
+                  value: custom-{{ this.entity_id | default('unknown') }}
               custom_value: true
         icon_1:
           name: Action Button 1 icon - iOS Only
@@ -772,7 +772,7 @@ blueprint:
             select:
               options:
                 - label: Silence New Notifications
-                  value: silence-{{ this.entity_id }}
+                  value: silence-{{ this.entity_id | default('unknown') }}
                 - label: View Clip
                   value: "{{base_url}}/api/frigate{{client_id}}/notifications/{{id}}/{{camera}}/clip.mp4"
                 - label: View Clip (IOS)
@@ -794,7 +794,7 @@ blueprint:
                 - label: Open Reolink App (Android)
                   value: app://com.mcu.reolink
                 - label: Custom Action (Manual Trigger)
-                  value: custom-{{ this.entity_id }}
+                  value: custom-{{ this.entity_id | default('unknown') }}
               custom_value: true
         icon_2:
           name: Action Button 2 icon - iOS Only
@@ -807,12 +807,12 @@ blueprint:
         url_3:
           name: Action Button 3 URL
           description: Customise what happens when you press the third Action Button. Select from one of the preconfigured options or enter your own custom URL.
-          default: silence-{{ this.entity_id }}
+          default: silence-{{ this.entity_id | default('unknown') }}
           selector:
             select:
               options:
                 - label: Silence New Notifications
-                  value: silence-{{ this.entity_id }}
+                  value: silence-{{ this.entity_id | default('unknown') }}
                 - label: View Clip
                   value: "{{base_url}}/api/frigate{{client_id}}/notifications/{{id}}/{{camera}}/clip.mp4"
                 - label: View Clip (IOS)
@@ -834,7 +834,7 @@ blueprint:
                 - label: Open Reolink App (Android)
                   value: app://com.mcu.reolink
                 - label: Custom Action (Manual Trigger)
-                  value: custom-{{ this.entity_id }}
+                  value: custom-{{ this.entity_id | default('unknown') }}
               custom_value: true
         icon_3:
           name: Action Button 3 icon - iOS Only
@@ -966,22 +966,22 @@ triggers:
   - trigger: event
     event_type: mobile_app_notification_action
     event_data:
-      action: "silence-{{ this.entity_id }}"
+      action: "silence-{{ this.entity_id | default('unknown') }}"
     id: silence
   - trigger: event
     event_type: telegram_callback
     event_data:
-      data: "silence-{{ this.entity_id }}"
+      data: "silence-{{ this.entity_id | default('unknown') }}"
     id: silence
   - trigger: event
     event_type: mobile_app_notification_action
     event_data:
-      action: "custom-{{ this.entity_id}}"
+      action: "custom-{{ this.entity_id | default('unknown') }}"
     id: custom
   - trigger: event
     event_type: telegram_callback
     event_data:
-      action: "custom-{{ this.entity_id}}"
+      action: "custom-{{ this.entity_id | default('unknown') }}"
     id: custom
 variables:
   input_camera: !input camera
@@ -1043,6 +1043,9 @@ variables:
   redacted: !input redacted
   master_condition: !input master_condition
   input_message: !input message
+  # Initialize variables to avoid undefined errors
+  label: "{{ 'Unknown' if trigger.id != 'frigate-event' else trigger.payload_json['after']['data']['objects'] | list | join(', ') | title }}"
+  after_zones: "{{ [] if trigger.id != 'frigate-event' else (trigger.payload_json['after']['data']['zones'] | default([])) }}"
   # Dynamic Variables per event
   severity_satisfied: "{{input_severity|select('in', severity)|list|length > 0 if trigger.id == 'frigate-event'}}"
   objects: "{{ trigger.payload_json['after']['data']['objects'] if trigger.id == 'frigate-event' }}"
@@ -1078,14 +1081,14 @@ actions:
         sequence:
           - action: automation.turn_off
             target:
-              entity_id: "{{ this.entity_id }}"
+              entity_id: "{{ this.entity_id | default('') }}"
             data:
               stop_actions: false
           - delay:
               minutes: !input silence_timer
           - action: automation.turn_on
             target:
-              entity_id: "{{ this.entity_id }}"
+              entity_id: "{{ this.entity_id | default('') }}"
       - alias: "Custom Action Manual"
         conditions:
           - condition: trigger
@@ -1134,17 +1137,17 @@ actions:
 
               # Zones Variables
               # If no zones defined, or any zones have been entered
-              any_zones_entered: "{{ zones | length == 0 or ((zones | select('in', after_zones) | list | length) > 0) }}"
+              any_zones_entered: "{{ zones | length == 0 or ((zones | select('in', after_zones | default([])) | list | length) > 0) }}"
               zone_single_satisfied: "{{ any_zones_entered if zone_only else true}}"
 
               # If no zones defined, or all zones have been entered
-              all_zones_entered: "{{ zones | length == 0 or ((zones | reject('in', after_zones) | list | length) == 0) }}"
+              all_zones_entered: "{{ zones | length == 0 or ((zones | reject('in', after_zones | default([])) | list | length) == 0) }}"
               zone_multi_satisfied: "{{ all_zones_entered if zone_only and zone_multi else true}}"
 
               # Compare the joined strings for equality is the simplest solution, due to both variables being defined in band.
               ordered_zones_match: >
                 {% set ns = namespace(intersection=[]) %}
-                {% for item in after_zones %}
+                {% for item in after_zones | default([]) %}
                     {% if item in zones %}
                         {% set ns.intersection = ns.intersection + [item] %}
                     {% endif %}
@@ -1624,17 +1627,17 @@ actions:
                     before_zones: "{{ event['before']['data']['zones'] | list | lower | default([]) }}"
                     after_zones: "{{ event['after']['data']['zones'] | list | lower | default([]) }}"
                     # If no zones defined, or any zones have been entered
-                    any_zones_entered: "{{ zones | length == 0 or ((zones | select('in', after_zones) | list | length) > 0) }}"
+                    any_zones_entered: "{{ zones | length == 0 or ((zones | select('in', after_zones | default([])) | list | length) > 0) }}"
                     zone_single_satisfied: "{{ any_zones_entered if zone_only else true}}"
 
                     # If no zones defined, or all zones have been entered
-                    all_zones_entered: "{{ zones | length == 0 or ((zones | reject('in', after_zones) | list | length) == 0) }}"
+                    all_zones_entered: "{{ zones | length == 0 or ((zones | reject('in', after_zones | default([])) | list | length) == 0) }}"
                     zone_multi_satisfied: "{{ all_zones_entered if zone_only and zone_multi else true}}"
 
                     # Compare the joined strings for equality is the simplest solution, due to both variables being defined in band.
                     ordered_zones_match: >
                       {% set ns = namespace(intersection=[]) %}
-                      {% for item in after_zones %}
+                      {% for item in after_zones | default([]) %}
                           {% if item in zones %}
                               {% set ns.intersection = ns.intersection + [item] %}
                           {% endif %}
