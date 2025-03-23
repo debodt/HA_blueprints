@@ -1042,6 +1042,7 @@ variables:
   debug: !input debug
   redacted: !input redacted
   master_condition: !input master_condition
+  input_message: !input message
   # Dynamic Variables per event
   severity_satisfied: "{{input_severity|select('in', severity)|list|length > 0 if trigger.id == 'frigate-event'}}"
   objects: "{{ trigger.payload_json['after']['data']['objects'] if trigger.id == 'frigate-event' }}"
@@ -1155,7 +1156,7 @@ actions:
               zones_satisfied: "{{zone_single_satisfied and zone_multi_satisfied and zone_order_satisfied}}"
               # Customisation of text
               title: !input title
-              message: !input message
+              message: "{{ input_message }}"
               subtitle: !input subtitle
               tap_action: !input tap_action
               button_1: !input button_1
@@ -1684,7 +1685,7 @@ actions:
                     # import the title and message again so any sublabel, object or zone changes are captured.
                     title: !input title
                     message: >-
-                      {{ !input message }}{% if show_ai_description and object_description %}
+                      {{ input_message }}{% if show_ai_description and object_description %}
                       
                       Description: {{ object_description }}{% endif %}
                     subtitle: !input subtitle
