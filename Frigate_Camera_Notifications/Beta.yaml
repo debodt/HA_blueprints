@@ -1136,6 +1136,12 @@ actions:
                       message_id: "{{ states('input_text.' ~ this.entity_id | replace('.', '_') | lower ~ '_message_ids') }}"
                       chat_id: "{{telegram_chat_id}}"
                       message: "{{message}}"
+                      inline_keyboard:
+                        - [
+                            ["{{button_1}}", "{{url_1}}"],
+                            ["{{button_2}}", "{{url_2}}"],
+                          ]
+                        - [["{{button_3}}", "{{url_3}}"]]
               - conditions: "{{ not notify_group_target }}"
                 sequence:
                   - device_id: !input notify_device
@@ -1195,8 +1201,53 @@ actions:
                       data:
                         tag: "{{ tag }}"
                         group: "{{ group }}"
-                        # ...existing TV notification settings...
-                        # Same as original notification but with updated message
+                        color: "{{color}}"
+                        # Android Specific
+                        subject: "{{subtitle}}"
+                        clickAction: "{{tap_action}}"
+                        ttl: 0
+                        priority: high
+                        notification_icon: "{{icon}}"
+                        sticky: "{{sticky}}"
+                        channel: "{{'alarm_stream' if critical else channel}}"
+                        car_ui: "{{android_auto}}"
+                        # Android/Fire TV
+                        image:
+                          url: "{{attachment | replace('review_preview.gif','snapshot.jpg') | replace('event_preview.gif','snapshot.jpg')}}"
+                        fontsize: "{{tv_size}}"
+                        position: "{{tv_position}}"
+                        duration: "{{tv_duration}}"
+                        transparency: "{{tv_transparency}}"
+                        interrupt: "{{tv_interrupt}}"
+                        timeout: 30
+                        # iOS Specific
+                        subtitle: "{{subtitle}}"
+                        url: "{{tap_action}}"
+                        attachment:
+                          url: "{{video if video else attachment }}"
+                          content-type: "{{ 'application/vnd.apple.mpegurl' if 'm3u8' in video else 'mp4' if 'mp4' in video else 'jpeg' if 'jpg' in attachment else 'gif' }}"
+                        push:
+                          sound: none
+                          volume: 0
+                          interruption-level: "{{ iif(critical, 1, interruption_level) }}"
+                        entity_id: "{{ios_live_view}}"
+                        # Actions
+                        actions:
+                          - action: "{{ 'URI' if '/' in url_1 else url_1 }}"
+                            title: "{{button_1}}"
+                            uri: "{{url_1}}"
+                            icon: "{{icon_1}}"
+                            destructive: "{{not '/' in url_1}}"
+                          - action: "{{ 'URI' if '/' in url_2 else url_2 }}"
+                            title: "{{button_2}}"
+                            uri: "{{url_2}}"
+                            icon: "{{icon_2}}"
+                            destructive: "{{not '/' in url_2}}"
+                          - action: "{{ 'URI' if '/' in url_3 else url_3 }}"
+                            title: "{{button_3}}"
+                            uri: "{{url_3}}"
+                            icon: "{{icon_3}}"
+                            destructive: "{{not '/' in url_3}}"
             default:
               - action: "notify.{{ notify_group_target }}"
                 data:
@@ -1206,9 +1257,45 @@ actions:
                     tag: "{{ tag }}"
                     group: "{{ group }}"
                     color: "{{color}}"
-                    # Other notification data (same as original)
-                    # ...existing notification data...
-                    # Same as original notification but with updated message and silent
+                    # Android Specific
+                    subject: "{{subtitle}}"
+                    image: "{{attachment}}"
+                    video: "{{video}}"
+                    clickAction: "{{tap_action}}"
+                    ttl: 0
+                    priority: high
+                    notification_icon: "{{icon}}"
+                    sticky: "{{sticky}}"
+                    channel: "{{'alarm_stream' if critical else channel}}"
+                    car_ui: "{{android_auto}}"
+                    # iOS Specific
+                    subtitle: "{{subtitle}}"
+                    url: "{{tap_action}}"
+                    attachment:
+                      url: "{{video if video else attachment }}"
+                      content-type: "{{ 'application/vnd.apple.mpegurl' if 'm3u8' in video else 'mp4' if 'mp4' in video else 'jpeg' if 'jpg' in attachment else 'gif' }}"
+                    push:
+                      sound: none
+                      volume: 0
+                      interruption-level: "{{ iif(critical, 1, interruption_level) }}"
+                    entity_id: "{{ios_live_view}}"
+                    # Actions
+                    actions:
+                      - action: "{{ 'URI' if '/' in url_1 else url_1 }}"
+                        title: "{{button_1}}"
+                        uri: "{{url_1}}"
+                        icon: "{{icon_1}}"
+                        destructive: "{{not '/' in url_1}}"
+                      - action: "{{ 'URI' if '/' in url_2 else url_2 }}"
+                        title: "{{button_2}}"
+                        uri: "{{url_2}}"
+                        icon: "{{icon_2}}"
+                        destructive: "{{not '/' in url_2}}"
+                      - action: "{{ 'URI' if '/' in url_3 else url_3 }}"
+                        title: "{{button_3}}"
+                        uri: "{{url_3}}"
+                        icon: "{{icon_3}}"
+                        destructive: "{{not '/' in url_3}}"
       - alias: "Frigate Event"
         conditions:
           - condition: trigger
