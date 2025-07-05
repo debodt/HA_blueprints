@@ -1,6 +1,6 @@
 blueprint:
-  name: Frigate Notifications (0.14.0.3i)
-  author: DeBodt
+  name: Frigate Notifications (0.2)
+  author: SgtBatten
   homeassistant:
     min_version: 2024.11.0
   description: |
@@ -123,6 +123,8 @@ blueprint:
           selector:
             select:
               options:
+                - label: "Default: Get from genai"
+                  value: "{{ genai_description }} [**{{ camera_name }}**] "
                 - label: "Default:   e.g., A Person was detected on the Side camera."
                   value: "A {{ label }} {{ 'was detected' }} on the {{ camera_name }} camera."
                 - label: "Short:     e.g., Person detected - Side"
@@ -425,14 +427,6 @@ blueprint:
           name: Notification Channel - Android only (Optional)
           description: Create a new channel for notifications to allow custom notification sounds, vibration patterns, and override of Do Not Disturb mode. Configured directly on the device.
           default: ""
-        generative_ai:
-          name: Use Generative AI Descriptions
-          description: |
-            Update notifications with AI-generated descriptions of detected objects when available.
-            Requires Frigate to be configured with generative AI support.
-          default: false
-          selector:
-            boolean:
     filters:
       name: |
         # Filters
@@ -706,11 +700,11 @@ blueprint:
                 - label: Open Home Assistant (app)
                   value: /lovelace
                 - label: Open Frigate
-                  value: /ccab4aaf_frigate/ingress
+                  value: /ccab4aaf_frigate/dashboard
                 - label: Open Frigate (Full Access)
-                  value: /ccab4aaf_frigate-fa/ingress
+                  value: /ccab4aaf_frigate-fa/dashboard
                 - label: Open Frigate (proxy)
-                  value: /ccab4aaf_frigate-proxy/ingress
+                  value: /ccab4aaf_frigate-proxy/dashboard
                 - label: Open Reolink App (Android)
                   value: app://com.mcu.reolink
                 - label: None (Android)
@@ -746,11 +740,11 @@ blueprint:
                 - label: Open Home Assistant (app)
                   value: /lovelace
                 - label: Open Frigate
-                  value: /ccab4aaf_frigate/ingress
+                  value: /ccab4aaf_frigate/dashboard
                 - label: Open Frigate (Full Access)
-                  value: /ccab4aaf_frigate-fa/ingress
+                  value: /ccab4aaf_frigate-fa/dashboard
                 - label: Open Frigate (proxy)
-                  value: /ccab4aaf_frigate-proxy/ingress
+                  value: /ccab4aaf_frigate-proxy/dashboard
                 - label: Open Reolink App (Android)
                   value: app://com.mcu.reolink
                 - label: Custom Action (Manual Trigger)
@@ -786,11 +780,11 @@ blueprint:
                 - label: Open Home Assistant (app)
                   value: /lovelace
                 - label: Open Frigate
-                  value: /ccab4aaf_frigate/ingress
+                  value: /ccab4aaf_frigate/dashboard
                 - label: Open Frigate (Full Access)
-                  value: /ccab4aaf_frigate-fa/ingress
+                  value: /ccab4aaf_frigate-fa/dashboard
                 - label: Open Frigate (proxy)
-                  value: /ccab4aaf_frigate-proxy/ingress
+                  value: /ccab4aaf_frigate-proxy/dashboard
                 - label: Open Reolink App (Android)
                   value: app://com.mcu.reolink
                 - label: Custom Action (Manual Trigger)
@@ -826,11 +820,11 @@ blueprint:
                 - label: Open Home Assistant (app)
                   value: /lovelace
                 - label: Open Frigate
-                  value: /ccab4aaf_frigate/ingress
+                  value: /ccab4aaf_frigate/dashboard
                 - label: Open Frigate (Full Access)
-                  value: /ccab4aaf_frigate-fa/ingress
+                  value: /ccab4aaf_frigate-fa/dashboard
                 - label: Open Frigate (proxy)
-                  value: /ccab4aaf_frigate-proxy/ingress
+                  value: /ccab4aaf_frigate-proxy/dashboard
                 - label: Open Reolink App (Android)
                   value: app://com.mcu.reolink
                 - label: Custom Action (Manual Trigger)
@@ -954,10 +948,15 @@ trigger_variables:
   mqtt_topic: !input mqtt_topic
 triggers:
   - trigger: mqtt
-    topic: "{{mqtt_topic}}"
+    topic: "{{ mqtt_topic }}"
     payload: "new"
-    value_template: "{{value_json['type']}}"
+    value_template: "{{ value_json['type'] }}"
     id: frigate-event
+  - trigger: mqtt
+    topic: frigate/tracked_object_update
+    payload: "description"
+    value_template: "{{ value_json['type'] }}"
+    id: frigate-genai   
   - trigger: event
     event_type: mobile_app_notification_action
     event_data:
@@ -978,13 +977,11 @@ triggers:
     event_data:
       action: "custom-{{ this.entity_id}}"
     id: custom
-  - trigger: mqtt
-    topic: "frigate/tracked_object_update"
-    id: generative-ai-update
 variables:
   input_camera: !input camera
   input_camera_name: "{{input_camera|expand|map(attribute='attributes.camera_name', default='none')|list}}"
   camera: "{{trigger.payload_json['after']['camera'] if trigger.id == 'frigate-event'}}"
+  genai_camera: "{{trigger.payload_json['description'] if trigger.id == 'frigate-genai'}}"
   camera_name: "{{ camera | replace('_', ' ') | title }}"
   input_severity: !input review_severity
   severity: "{{trigger.payload_json['after']['severity'] if trigger.id == 'frigate-event'}}"
@@ -1039,7 +1036,6 @@ variables:
   debug: !input debug
   redacted: !input redacted
   master_condition: !input master_condition
-  generative_ai: !input generative_ai
   # Dynamic Variables per event
   severity_satisfied: "{{input_severity|select('in', severity)|list|length > 0 if trigger.id == 'frigate-event'}}"
   objects: "{{ trigger.payload_json['after']['data']['objects'] if trigger.id == 'frigate-event' }}"
@@ -1049,6 +1045,8 @@ variables:
   before_zones: "{{ trigger.payload_json['before']['data']['zones'] | list | lower if trigger.id == 'frigate-event' }}"
   after_zones: "{{ trigger.payload_json['after']['data']['zones'] | list | lower if trigger.id == 'frigate-event' }}"
   zone_multi_filter: "{{zone_only and zone_multi and after_zones|length and zones and zones |reject('in', after_zones) |list |length == 0 }}"
+  event_id: "{{ trigger.payload_json['after']['id'] if trigger.id == 'frigate-event' }}"
+  
 conditions:
   condition: or
   conditions:
@@ -1056,20 +1054,11 @@ conditions:
       id: silence
     - condition: trigger
       id: custom
-    - condition: trigger
-      id: frigate-event
     - condition: and
       conditions:
-        - condition: trigger
-          id: generative-ai-update
-        - condition: template
-          value_template: "{{ trigger.payload_json['type'] == 'description' }}"
-        - condition: template
-          value_template: "{{ generative_ai }}"
-    - condition: and
-      conditions:
-        - condition: trigger
-          id: frigate-event
+        - alias: Camera topic
+          condition: template
+          value_template: "{{ trigger.topic == 'frigate/reviews' or trigger.topic == 'frigate/tracked_object_update' }}"  
         - alias: Camera Match
           condition: template
           value_template: "{{ input_camera_name|select('equalto', camera)|list|length>0 }}"
@@ -1081,7 +1070,7 @@ conditions:
         - alias: Disable Times
           condition: template
           value_template: "{{ not disable_times|length or not now().hour in disable_times|map('int')|list }}"
-actions:
+actions:  
   - choose:
       - alias: "Silence New Object Notifications"
         conditions:
@@ -1103,206 +1092,23 @@ actions:
           - condition: trigger
             id: custom
         sequence: !input "custom_action_manual"
-      - alias: "Generative AI Update"
-        conditions:
-          - condition: trigger
-            id: generative-ai-update
-          - condition: template
-            value_template: "{{ trigger.payload_json['type'] == 'description' }}"
-          - condition: template
-            value_template: "{{ generative_ai }}"
-        sequence:
-          - variables:
-              ai_id: "{{ trigger.payload_json['id'] }}"
-              ai_description: "{{ trigger.payload_json['description'] }}"
-              tag: "{{ ai_id }}"
-              updated_message: "{{ states('input_text.' ~ this.entity_id | replace('.', '_') | lower ~ '_messages') }}"
-              message: >
-                {% if updated_message and ai_id in updated_message %}
-                  {{ updated_message }}
-                {% else %}
-                  {{ message }} | {{ ai_description }}
-                {% endif %}
-          - service: input_text.set_value
-            target:
-              entity_id: "input_text.{{ this.entity_id | replace('.', '_') | lower }}_messages"
-            data:
-              value: "{{ '{' }}\"{{ ai_id }}\": \"{{ message }}\"{{ '}' }}"
-          - choose:
-              - conditions: "{{ telegram }}"
-                sequence:
-                  - action: telegram_bot.edit_message
-                    data:
-                      message_id: "{{ states('input_text.' ~ this.entity_id | replace('.', '_') | lower ~ '_message_ids') }}"
-                      chat_id: "{{telegram_chat_id}}"
-                      message: "{{message}}"
-                      inline_keyboard:
-                        - [
-                            ["{{button_1}}", "{{url_1}}"],
-                            ["{{button_2}}", "{{url_2}}"],
-                          ]
-                        - [["{{button_3}}", "{{url_3}}"]]
-              - conditions: "{{ not notify_group_target }}"
-                sequence:
-                  - device_id: !input notify_device
-                    domain: mobile_app
-                    type: notify
-                    title: "{{title}}"
-                    message: "{{message}}"
-                    data:
-                      tag: "{{ tag }}"
-                      group: "{{ group }}"
-                      color: "{{color}}"
-                      # Android Specific
-                      subject: "{{subtitle}}"
-                      image: "{{attachment}}"
-                      video: "{{video}}"
-                      clickAction: "{{tap_action}}"
-                      ttl: 0
-                      priority: high
-                      notification_icon: "{{icon}}"
-                      sticky: "{{sticky}}"
-                      channel: "{{'alarm_stream' if critical else channel}}"
-                      car_ui: "{{android_auto}}"
-                      # iOS Specific
-                      subtitle: "{{subtitle}}"
-                      url: "{{tap_action}}"
-                      attachment:
-                        url: "{{video if video else attachment }}"
-                        content-type: "{{ 'application/vnd.apple.mpegurl' if 'm3u8' in video else 'mp4' if 'mp4' in video else 'jpeg' if 'jpg' in attachment else 'gif' }}"
-                      push:
-                        sound: none
-                        volume: 0
-                        interruption-level: "{{ iif(critical, 1, interruption_level) }}"
-                      entity_id: "{{ios_live_view}}"
-                      # Actions
-                      actions:
-                        - action: "{{ 'URI' if '/' in url_1 else url_1 }}"
-                          title: "{{button_1}}"
-                          uri: "{{url_1}}"
-                          icon: "{{icon_1}}"
-                          destructive: "{{not '/' in url_1}}"
-                        - action: "{{ 'URI' if '/' in url_2 else url_2 }}"
-                          title: "{{button_2}}"
-                          uri: "{{url_2}}"
-                          icon: "{{icon_2}}"
-                          destructive: "{{not '/' in url_2}}"
-                        - action: "{{ 'URI' if '/' in url_3 else url_3 }}"
-                          title: "{{button_3}}"
-                          uri: "{{url_3}}"
-                          icon: "{{icon_3}}"
-                          destructive: "{{not '/' in url_3}}"
-              - conditions: "{{ tv }}"
-                sequence:
-                  - action: "notify.{{ notify_group_target }}"
-                    data:
-                      title: "{{title}}"
-                      message: "{{message}}"
-                      data:
-                        tag: "{{ tag }}"
-                        group: "{{ group }}"
-                        color: "{{color}}"
-                        # Android Specific
-                        subject: "{{subtitle}}"
-                        clickAction: "{{tap_action}}"
-                        ttl: 0
-                        priority: high
-                        notification_icon: "{{icon}}"
-                        sticky: "{{sticky}}"
-                        channel: "{{'alarm_stream' if critical else channel}}"
-                        car_ui: "{{android_auto}}"
-                        # Android/Fire TV
-                        image:
-                          url: "{{attachment | replace('review_preview.gif','snapshot.jpg') | replace('event_preview.gif','snapshot.jpg')}}"
-                        fontsize: "{{tv_size}}"
-                        position: "{{tv_position}}"
-                        duration: "{{tv_duration}}"
-                        transparency: "{{tv_transparency}}"
-                        interrupt: "{{tv_interrupt}}"
-                        timeout: 30
-                        # iOS Specific
-                        subtitle: "{{subtitle}}"
-                        url: "{{tap_action}}"
-                        attachment:
-                          url: "{{video if video else attachment }}"
-                          content-type: "{{ 'application/vnd.apple.mpegurl' if 'm3u8' in video else 'mp4' if 'mp4' in video else 'jpeg' if 'jpg' in attachment else 'gif' }}"
-                        push:
-                          sound: none
-                          volume: 0
-                          interruption-level: "{{ iif(critical, 1, interruption_level) }}"
-                        entity_id: "{{ios_live_view}}"
-                        # Actions
-                        actions:
-                          - action: "{{ 'URI' if '/' in url_1 else url_1 }}"
-                            title: "{{button_1}}"
-                            uri: "{{url_1}}"
-                            icon: "{{icon_1}}"
-                            destructive: "{{not '/' in url_1}}"
-                          - action: "{{ 'URI' if '/' in url_2 else url_2 }}"
-                            title: "{{button_2}}"
-                            uri: "{{url_2}}"
-                            icon: "{{icon_2}}"
-                            destructive: "{{not '/' in url_2}}"
-                          - action: "{{ 'URI' if '/' in url_3 else url_3 }}"
-                            title: "{{button_3}}"
-                            uri: "{{url_3}}"
-                            icon: "{{icon_3}}"
-                            destructive: "{{not '/' in url_3}}"
-            default:
-              - action: "notify.{{ notify_group_target }}"
-                data:
-                  title: "{{title}}"
-                  message: "{{message}}"
-                  data:
-                    tag: "{{ tag }}"
-                    group: "{{ group }}"
-                    color: "{{color}}"
-                    # Android Specific
-                    subject: "{{subtitle}}"
-                    image: "{{attachment}}"
-                    video: "{{video}}"
-                    clickAction: "{{tap_action}}"
-                    ttl: 0
-                    priority: high
-                    notification_icon: "{{icon}}"
-                    sticky: "{{sticky}}"
-                    channel: "{{'alarm_stream' if critical else channel}}"
-                    car_ui: "{{android_auto}}"
-                    # iOS Specific
-                    subtitle: "{{subtitle}}"
-                    url: "{{tap_action}}"
-                    attachment:
-                      url: "{{video if video else attachment }}"
-                      content-type: "{{ 'application/vnd.apple.mpegurl' if 'm3u8' in video else 'mp4' if 'mp4' in video else 'jpeg' if 'jpg' in attachment else 'gif' }}"
-                    push:
-                      sound: none
-                      volume: 0
-                      interruption-level: "{{ iif(critical, 1, interruption_level) }}"
-                    entity_id: "{{ios_live_view}}"
-                    # Actions
-                    actions:
-                      - action: "{{ 'URI' if '/' in url_1 else url_1 }}"
-                        title: "{{button_1}}"
-                        uri: "{{url_1}}"
-                        icon: "{{icon_1}}"
-                        destructive: "{{not '/' in url_1}}"
-                      - action: "{{ 'URI' if '/' in url_2 else url_2 }}"
-                        title: "{{button_2}}"
-                        uri: "{{url_2}}"
-                        icon: "{{icon_2}}"
-                        destructive: "{{not '/' in url_2}}"
-                      - action: "{{ 'URI' if '/' in url_3 else url_3 }}"
-                        title: "{{button_3}}"
-                        uri: "{{url_3}}"
-                        icon: "{{icon_3}}"
-                        destructive: "{{not '/' in url_3}}"
       - alias: "Frigate Event"
         conditions:
           - condition: trigger
             id: "frigate-event"
         sequence:
+          - wait_for_trigger:             
+              - trigger: mqtt
+                topic: frigate/tracked_object_update
+                payload: "description"
+                value_template: "{{ value_json['type'] }}"
+            timeout:
+              minutes: "{{timeout}}"
+            continue_on_timeout: false
           - variables:
               event: "{{ trigger.payload_json }}"
+              genai: "{{wait.trigger.payload_json}}"
+              genai_description: "{{genai['description']}}"
               detections: "{{ event['after']['data']['detections'] }}"
               review_id: "{{event['after']['id']}}"
               id: "{{ detections[0] }}"
@@ -1401,7 +1207,9 @@ actions:
                             Frigate Review id: {{review_id}}{{', Frigate client ID: ' + client_id if client_id else ''}}, 
                             Frigate Detections: {{detections}}
                             Objects: {{label}},
-                            Sub Labels: {{sub_labels | join(', ')}}
+                            Sub Labels: {{sub_labels | join(', ')}},
+                            GenAI: {{genai}}
+                            GenAI_description: {{genai_description}}
                           Config: 
                             Camera(formatted): {{camera}}({{camera_name}}), 
                             Base URL: {{'REDACTED' if base_url and redacted else base_url}},
@@ -1670,8 +1478,7 @@ actions:
                                     uri: "{{url_3}}"
                                     icon: "{{icon_3}}"
                                     destructive: "{{not '/' in url_3}}"
-
-                      - if: "{{tts and (not tts_helper or not alert_once or (tts_helper and id not in states(tts_helper)))}}"
+                      - if: "{{tts and (not tts_helper or not alert_once or (tts_helper and tag not in states(tts_helper)))}}"
                         then:
                           sequence:
                             - choose:
@@ -1698,7 +1505,7 @@ actions:
                             - action: input_text.set_value
                               data:
                                 value: |
-                                  {% set newIds = id + '|' + states(tts_helper) %}
+                                  {% set newIds = tag + '|' + states(tts_helper) %}
                                   {{ newIds[:250] }}
                               target:
                                 entity_id: "{{tts_helper}}"
@@ -1712,16 +1519,20 @@ actions:
                       topic: "{{mqtt_topic}}"
                       payload: "{{ review_id }}"
                       value_template: "{{ value_json['after']['id'] }}"
+                    - trigger: mqtt
+                      topic: frigate/tracked_object_update
                   timeout:
                     minutes: "{{timeout}}"
                   continue_on_timeout: false
                 - variables:
                     # use the subsequent attchment variable if set
+                    topic: "{{mqtt_topic}}"
                     attachment_2: !input attachment_2
                     attachment: "{{iif(attachment_2, attachment_2, attachment)}}"
-
-                    event: "{{ wait.trigger.payload_json }}"
-                    type: "{{event['type']}}"
+                    genai: "{{ wait.trigger.payload_json if wait.trigger.topic == 'frigate/tracked_object_update' }}"
+                    genai_description: "{{ genai['description'] if wait.trigger.topic == 'frigate/tracked_object_update' }}"
+                    event: "{{ wait.trigger.payload_json if  wait.trigger.topic == topic }}"
+                    type: "{{event['type'] if  wait.trigger.topic == topic }}"
 
                     initial_severity: "{{severity}}"
                     old_objects: "{{objects}}"
@@ -1729,21 +1540,21 @@ actions:
                     # Sometimes mqtt messages are missed so we keep the previous iteration severity, objects and zones to compare against the new ones,
                     # rather than comparing the new before and after which may match despite a change between mqtt messages
 
-                    severity: "{{event['after']['severity']}}"
+                    severity: "{{event['after']['severity'] if event and 'after' in event else initial_severity}}"
                     severity_updated: "{{initial_severity != severity}}"
                     severity_satisfied: "{{((input_severity | select('equalto', severity) | list | length) > 0) }}"
 
-                    objects: "{{ event['after']['data']['objects'] }}"
+                    objects: "{{ event['after']['data']['objects'] if event and 'after' in event else old_objects }}"
                     objects_satisfied: "{{ not labels|length or labels|select('in', objects)|list|length > 0 or ('person-verified' in objects and 'person' in labels) }}"
                     #loitering: "{{ loiter_timer and event['before']['motionless_count']/fps/60 < loiter_timer and event['after']['motionless_count']/fps/60 >= loiter_timer }}"
                     home: "{{presence_entity |reject('in', '') |select('is_state', 'home') |list |length != 0 }}"
                     #new_snapshot: "{{ update_thumbnail and event['before']['snapshot']['frame_time'] != event['after']['snapshot']['frame_time'] }}"
-                    presence_changed: "{{ presence_entity |reject('in', '') |expand |map(attribute='last_changed') |list |select('gt', as_datetime(event['before']['start_time'])) |list |length != 0 }}"
+                    presence_changed: "{{ presence_entity |reject('in', '') |expand |map(attribute='last_changed') |list |select('gt', as_datetime(event['before']['start_time'])) |list |length != 0 if event and 'before' in event else false }}"
 
                     # Zones Variables
 
-                    before_zones: "{{ event['before']['data']['zones'] | list | lower | default([]) }}"
-                    after_zones: "{{ event['after']['data']['zones'] | list | lower | default([]) }}"
+                    before_zones: "{{ event['before']['data']['zones'] | list | lower | default([]) if event and 'before' in event else [] }}"
+                    after_zones: "{{ event['after']['data']['zones'] | list | lower | default([]) if event and 'after' in event else last_zones }}"
                     # If no zones defined, or any zones have been entered
                     any_zones_entered: "{{ zones | length == 0 or ((zones | select('in', after_zones) | list | length) > 0) }}"
                     zone_single_satisfied: "{{ any_zones_entered if zone_only else true}}"
@@ -1776,7 +1587,7 @@ actions:
                     state_satisfied: "{{ not state_only or states(input_entity)|lower in states_filter }}"
 
                     before_sub_labels: "{{ sub_labels }}"
-                    sub_labels: "{{ event['after']['data']['sub_labels'] | default([]) }}"
+                    sub_labels: "{{ event['after']['data']['sub_labels'] | default([]) if event and 'after' in event else before_sub_labels }}"
                     # assess the sub labels from the mqtt message.
                     # If the user has configured specific objects we eliminate objects not in that list
                     # Otherwise we loop through all objects and replace any verified objects with the sub label
@@ -1812,6 +1623,7 @@ actions:
                     critical: "{{ true if critical_input == 'true' else true if critical_input == True else false }}"
                     interruption_level: !input interruption_level
                     tts: !input tts
+                    tag: !input tag
 
                     sub_label_updated: "{{ update_sub_label and sub_labels != before_sub_labels }}"
                     # If we are filtering based on zones, and zone conditions are met and there is a new zone added.
@@ -1834,6 +1646,8 @@ actions:
                               DEBUG (in loop):
                                 Send Notification: {{custom_filter and not home and zones_satisfied and state_satisfied and objects_satisfied and severity_satisfied and ((final_update and type == 'end') or (severity_updated or presence_changed or zone_updated or object_updated or sub_label_updated)) }}
                                 Info:
+                                  GenAI: {{genai}}
+                                  GenAI_description: {{genai_description}}
                                   Sub Label: {{sub_labels}},
                                   Image: "{{attachment if not redacted or not base_url else attachment |replace(base_url, 'REDACTED')}}"
                                   Title: {{title}}
@@ -1925,7 +1739,7 @@ actions:
                                       value_template: "{{final_update}}"
                                     - alias: End of Event
                                       condition: template
-                                      value_template: "{{event['type'] == 'end'}}"
+                                      value_template: "{{event and event['type'] == 'end'}}"
                       sequence:
                         - alias: "Custom Action Auto Multi"
                           choose:
@@ -1935,7 +1749,7 @@ actions:
                         - alias: "Delay for Final Update"
                           choose:
                             - conditions:
-                                - "{{ event['type'] == 'end' }}"
+                                - "{{ event and event['type'] == 'end' }}"
                                 - "{{ final_update }}"
                               sequence:
                                 - delay:
@@ -1947,7 +1761,7 @@ actions:
                                   sequence:
                                     - choose:
                                         - conditions:
-                                            - "{{ event['type'] == 'end' }}"
+                                            - "{{ event and event['type'] == 'end' }}"
                                             - "{{ video | length > 0 }}"
                                           sequence:
                                             - action: telegram_bot.send_video
@@ -2152,7 +1966,7 @@ actions:
                                           icon: "{{icon_3}}"
                                           destructive: "{{not '/' in url_3}}"
 
-                            - if: "{{tts and (not tts_helper or not alert_once or (tts_helper and id not in states(tts_helper)))}}"
+                            - if: "{{tts and (not tts_helper or not alert_once or (tts_helper and tag not in states(tts_helper)))}}"
                               then:
                                 sequence:
                                   - choose:
@@ -2180,7 +1994,7 @@ actions:
                                   - action: input_text.set_value
                                     data:
                                       value: |
-                                        {% set newIds = id + '|' + states(tts_helper) %}
+                                        {% set newIds = tag + '|' + states(tts_helper) %}
                                         {{ newIds[:250] }}
                                     target:
                                       entity_id: "{{tts_helper}}"
